@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    // Validation Blueprint for UserConsent
+    function isValidUserConsent(data) {
+      return data.keys().hasAll(['dataProcessingConsent', 'dataSharingConsent']) &&
+             data.dataProcessingConsent is bool &&
+             data.dataSharingConsent is bool;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserConsent(incoming()) &&
+                       incoming().keys().hasAll(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
+                       incoming().keys().size() <= 3 &&
+                       incoming().updatedAt == request.time;
+                       
+      allow update: if isOwner(userId) &&
+                       isValidUserConsent(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
+                       incoming().updatedAt == request.time;
+    }
+
+    // Validation Blueprint for MoodLog
+    function isValidMoodLog(data) {
+      return data.keys().hasAll(['uid', 'score', 'emotions', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.score is number &&
+             data.score >= 1 && data.score <= 5 &&
+             data.emotions is list && data.emotions.size() <= 20 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
+    }
+
+    match /mood_logs/{logId} {
+      allow read, list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      allow create: if isSignedIn() &&
+                       isValidId(logId) &&
+                       isValidMoodLog(incoming()) &&
+                       incoming().createdAt == request.time;
+                       
+      allow update: if false; // Mood logs are immutable
+      allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+
+    // Validation Blueprint for Assessment
+    function isValidAssessment(data) {
+      return data.keys().hasAll(['uid', 'type', 'score', 'answers', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.type is string && data.type.size() <= 100 &&
+             data.score is number &&
+             data.answers is string && data.answers.size() <= 2000;
+    }
+
+    match /assessments/{assessmentId} {
+      allow read, list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      allow create: if isSignedIn() &&
+                       isValidId(assessmentId) &&
+                       isValidAssessment(incoming()) &&
+                       incoming().createdAt == request.time;
+                       
+      allow update: if false; // Assessments are immutable
+      allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+  }
+}

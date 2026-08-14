@@ -1,0 +1,97 @@
+{
+  "entities": {
+    "UserConsent": {
+      "title": "UserConsent",
+      "description": "User consent settings for data processing and sharing.",
+      "type": "object",
+      "properties": {
+        "dataProcessingConsent": {
+          "type": "boolean",
+          "description": "Consent to process local insights."
+        },
+        "dataSharingConsent": {
+          "type": "boolean",
+          "description": "Consent to share data with professionals."
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last update."
+        }
+      },
+      "required": ["dataProcessingConsent", "dataSharingConsent"]
+    },
+    "MoodLog": {
+      "title": "MoodLog",
+      "description": "A daily check-in log for energy/wellbeing.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID."
+        },
+        "score": {
+          "type": "number",
+          "description": "Energy score from 1 to 5."
+        },
+        "emotions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of observed emotions."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes.",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp."
+        }
+      },
+      "required": ["uid", "score", "emotions", "createdAt"]
+    },
+    "Assessment": {
+      "title": "Assessment",
+      "description": "Periodic wellbeing assessment.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID."
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of assessment."
+        },
+        "score": {
+          "type": "number",
+          "description": "Calculated score."
+        },
+        "answers": {
+          "type": "string",
+          "description": "Stringified JSON of answers.",
+          "maxLength": 2000
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp."
+        }
+      },
+      "required": ["uid", "type", "score", "answers", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/UserConsent" },
+      "description": "User profile and consent preferences."
+    },
+    "mood_logs/{logId}": {
+      "schema": { "$ref": "#/entities/MoodLog" },
+      "description": "Check-in logs."
+    },
+    "assessments/{assessmentId}": {
+      "schema": { "$ref": "#/entities/Assessment" },
+      "description": "Completed assessments."
+    }
+  }
+}

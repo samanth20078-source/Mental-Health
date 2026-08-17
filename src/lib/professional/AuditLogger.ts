@@ -1,4 +1,4 @@
-import { AuditLogEntry, PermissionType } from './types.ts';
+import { AuditLogEntry, DataType } from './types.ts';
 
 export class AuditLogger {
   private logs: AuditLogEntry[] = [];
@@ -6,7 +6,8 @@ export class AuditLogger {
   public logAccess(
     professionalId: string, 
     patientId: string, 
-    accessedTypes: PermissionType[], 
+    requestedTypes: DataType[], 
+    grantedTypes: DataType[], 
     success: boolean, 
     reason?: string
   ): void {
@@ -15,16 +16,15 @@ export class AuditLogger {
       timestamp: Date.now(),
       professionalId,
       patientId,
-      accessedTypes,
+      requestedTypes,
+      grantedTypes,
       success,
       reason
     };
     
     this.logs.push(entry);
     
-    // In a real system, this should immediately flush to a secure, append-only datastore.
     if (!success) {
-      // Do not log patientId or detailed reasons to general console logs to avoid leaking PHI
       console.warn(`[AUDIT WARNING] Failed access attempt by professional: ${professionalId}`);
     } else {
       console.info(`[AUDIT] Authorized access by professional: ${professionalId}`);

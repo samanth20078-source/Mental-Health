@@ -1,30 +1,38 @@
 import { SensorDataPacket } from '../../types.ts';
 import { BasePipeline } from '../BasePipeline.ts';
-import { ProcessedFeature } from '../types.ts';
+import { ProcessedFeature, ValidityStatus } from '../types.ts';
 
 export class PPGPipeline extends BasePipeline {
-  public readonly version = '1.0.0';
+  public readonly version = '2.0.0';
   protected readonly featureName = 'PPG_RAW_FILTERED';
   protected readonly unit = 'mV';
   protected readonly targetSensor = 'PPG';
 
   protected extractFeatures(packets: SensorDataPacket[]): ProcessedFeature[] {
-    const features: ProcessedFeature[] = [];
-
-    // Conceptually applies bandpass filter to raw PPG values to remove baseline wander
-    for (const packet of packets) {
-      if (!packet.values || packet.values.length === 0) continue;
-      
-      // Since this is a raw signal pipeline, we might output the first value or an average
-      // For architecture, we'll output the mean of the packet's window as a placeholder for
-      // actual high-frequency signal pass-through.
-      const meanAmplitude = packet.values.reduce((a, b) => a + b, 0) / packet.values.length;
-      
-      const quality = packet.signalQuality === 'POOR' ? 'UNRELIABLE' : 'GOOD';
-      
-      features.push(this.createFeature(meanAmplitude, packet, quality));
+    if (packets.length === 0) return [];
+    
+    let rawSignal: number[] = [];
+    for (const p of packets) {
+      if (p.values) rawSignal = rawSignal.concat(p.values);
     }
+    
+    // Check for clipped signal (assuming 16-bit ADC, typical max is 65535 or similar)
+    // For simplicity we flag if too many values are perfectly flat
+    let flatlineCount = 0;
+    for (let i = 1; i < rawSignal.length; i++) {
+      if (rawSignal[i] === rawSignal[i-1]) flatlineCount++;
+    }
+    
+    if (flatlineCount > rawSignal.length * 0.5) {
+      return [this.createFeature(0, packets[packets.length - 1], 'UNRELIABLE', { reason: 'Signal clipped or flatlined', isSimulated: packets[0].isSimulated })];
+    }
+    
+    const meanAmplitude = rawSignal.reduce((a, b) => a + b, 0) / rawSignal.length;
+    
+    const quality = packets[0].signalQuality === 'POOR' ? 'UNRELIABLE' : 'GOOD';
+    const validity: ValidityStatus = quality === 'GOOD' ? 'VALID' : 'INVALID';
+    const confidence = quality === 'GOOD' ? 100 : 50;
 
-    return features;
+    return [this.createFeature(meanAmplitude, packets[packets.length - 1], quality, { samplesProcessed: rawSignal.length, isSimulated: packets[0].isSimulated })];
   }
 }

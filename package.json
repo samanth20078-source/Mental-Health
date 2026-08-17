@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "npx tsx src/tests/safety.test.ts && npx tsx src/tests/evidence.test.ts && npx tsx src/tests/processing.test.ts && npx tsx src/tests/wearables.test.ts && npx tsx src/tests/analytics.test.ts && npx tsx src/tests/authorization.test.ts && npx tsx src/tests/api.test.ts"
+    "test": "npx tsx src/tests/firestore-rules.test.ts && npx tsx src/tests/safety.test.ts && npx tsx src/tests/evidence.test.ts && npx tsx src/tests/processing.test.ts && npx tsx src/tests/wearables.test.ts && npx tsx src/tests/analytics.test.ts && npx tsx src/tests/authorization.test.ts && npx tsx src/tests/api.test.ts && NODE_ENV=test npx tsx src/tests/privacy.test.ts && npx tsx src/tests/security.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.16.0",

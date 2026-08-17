@@ -1,6 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
     // 1. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
@@ -37,17 +38,17 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId);
       
-      allow create: if isOwner(userId) &&
-                       isValidId(userId) &&
-                       isValidUserConsent(incoming()) &&
-                       incoming().keys().hasAll(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
-                       incoming().keys().size() <= 3 &&
-                       incoming().updatedAt == request.time;
-                       
-      allow update: if isOwner(userId) &&
-                       isValidUserConsent(incoming()) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
-                       incoming().updatedAt == request.time;
+      allow create: if isOwner(userId) && 
+                      isValidId(userId) && 
+                      isValidUserConsent(incoming()) && 
+                      incoming().keys().hasAll(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
+                      incoming().keys().size() <= 3 &&
+                      incoming().updatedAt == request.time;
+                      
+      allow update: if isOwner(userId) && 
+                      isValidUserConsent(incoming()) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['dataProcessingConsent', 'dataSharingConsent', 'updatedAt']) &&
+                      incoming().updatedAt == request.time;
     }
 
     // Validation Blueprint for MoodLog
@@ -63,11 +64,11 @@ service cloud.firestore {
     match /mood_logs/{logId} {
       allow read, list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
-      allow create: if isSignedIn() &&
-                       isValidId(logId) &&
-                       isValidMoodLog(incoming()) &&
-                       incoming().createdAt == request.time;
-                       
+      allow create: if isSignedIn() && 
+                      isValidId(logId) && 
+                      isValidMoodLog(incoming()) && 
+                      incoming().createdAt == request.time;
+                      
       allow update: if false; // Mood logs are immutable
       allow delete: if isSignedIn() && existing().uid == request.auth.uid;
     }
@@ -84,13 +85,38 @@ service cloud.firestore {
     match /assessments/{assessmentId} {
       allow read, list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
-      allow create: if isSignedIn() &&
-                       isValidId(assessmentId) &&
-                       isValidAssessment(incoming()) &&
-                       incoming().createdAt == request.time;
-                       
+      allow create: if isSignedIn() && 
+                      isValidId(assessmentId) && 
+                      isValidAssessment(incoming()) && 
+                      incoming().createdAt == request.time;
+                      
       allow update: if false; // Assessments are immutable
       allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+
+    // Advanced features & professional access explicit locks
+    match /consents/{consentId} {
+      allow read, write: if false; // Explicitly locked until R2
+    }
+    
+    match /sensor_insights/{insightId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false; // Only backend can write
+    }
+
+    match /raw_sensor_data/{dataId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false; // Only backend can write
+    }
+
+    match /ai_summaries/{summaryId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false; // Only backend can write
+    }
+
+    match /safety_events/{eventId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow write: if false; // Only backend can write
     }
   }
 }

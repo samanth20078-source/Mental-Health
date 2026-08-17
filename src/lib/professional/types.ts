@@ -1,20 +1,26 @@
-export type PermissionType = 
+export type DataType = 
   | 'SELF_REPORTED' 
   | 'SENSOR_INSIGHTS' 
   | 'RAW_SENSOR_DATA' 
   | 'SAFETY_EVENTS' 
   | 'AI_SUMMARIES';
 
-export type ConsentStatus = 'ACTIVE' | 'REVOKED';
+export type ConsentStatus = 'PENDING' | 'GRANTED' | 'DENIED' | 'REVOKED' | 'EXPIRED';
 
-export interface ConsentGrant {
+export interface ConsentRecord {
   id: string;
   patientId: string;
   professionalId: string;
-  permissions: Set<PermissionType>;
+  professionalName: string;
+  requestedDataTypes: DataType[];
+  grantedDataTypes: DataType[];
+  reason: string;
   status: ConsentStatus;
-  grantedAt: number;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
   revokedAt?: number;
+  version: string;
 }
 
 export interface AuditLogEntry {
@@ -22,12 +28,12 @@ export interface AuditLogEntry {
   timestamp: number;
   professionalId: string;
   patientId: string;
-  accessedTypes: PermissionType[];
+  requestedTypes: DataType[];
+  grantedTypes: DataType[];
   success: boolean;
-  reason?: string; // e.g., 'Insufficient permissions for RAW_SENSOR_DATA'
+  reason?: string; 
 }
 
-// Interfaces defining the shape of shared data by provenance
 export interface SelfReportedData {
   id: string;
   timestamp: number;

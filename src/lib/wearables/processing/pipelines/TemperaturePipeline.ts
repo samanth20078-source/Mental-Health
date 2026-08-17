@@ -14,7 +14,8 @@ export class TemperaturePipeline extends BasePipeline {
     for (const packet of packets) {
       if (!packet.values || packet.values.length === 0) continue;
       
-      const meanValue = packet.values.reduce((a, b) => a + b, 0) / packet.values.length;
+      const validValues = packet.values.filter(v => v >= 20 && v <= 45);
+      const meanValue = validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
       
       // Clinical/physiological bounds for skin temp (approx 20C to 45C)
       const quality = this.evaluateQuality(packet.signalQuality, meanValue, 20, 45);

@@ -18,7 +18,7 @@ const globalLimiter = rateLimit({
 
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
-  max: 3, // Set low for testing
+  max: 20, // Set low for testing
   message: { error: 'Too many AI requests, please try again later.' }
 });
 
@@ -123,10 +123,29 @@ async function runTests() {
   assert.ok(res4.body.error.includes("Invalid input format"));
   console.log("✓ Handled invalid input formatting");
 
+  
+  // 6. Oversized Input
+  const hugeMessage = "A".repeat(3000); // Exceeds z.string().max(2000)
+  let res6 = await request(app)
+    .post('/api/chat')
+    .set('Authorization', 'Bearer VALID_TOKEN')
+    .send({ message: hugeMessage });
+  assert.equal(res6.status, 400);
+  console.log("✓ Handled oversized input");
+
+  // 7. Malformed JSON
+  let res7 = await request(app)
+    .post('/api/chat')
+    .set('Authorization', 'Bearer VALID_TOKEN')
+    .set('Content-Type', 'application/json')
+    .send("{ invalid json: ");
+  assert.equal(res7.status, 400); // Express body-parser catches this
+  console.log("✓ Handled malformed JSON");
+
   // 5. Rate Limit Violations
   // We made 3 successful calls above? Wait, res1, res2, res4 didn't hit aiLimiter due to auth/validation? 
   // Let's explicitly trigger 4 valid calls.
-  await request(app).post('/api/chat').set('Authorization', 'Bearer VALID_TOKEN').send({ message: "Call 1" });
+  for(let i=0; i<17; i++) { await request(app).post('/api/chat').set('Authorization', 'Bearer VALID_TOKEN').send({ message: "Call " + i }); }
   await request(app).post('/api/chat').set('Authorization', 'Bearer VALID_TOKEN').send({ message: "Call 2" });
   await request(app).post('/api/chat').set('Authorization', 'Bearer VALID_TOKEN').send({ message: "Call 3" });
   
@@ -140,6 +159,7 @@ async function runTests() {
 
   // We need to bypass rate limit for the next test or use a different endpoint/mock. 
   // Since it's a test limit, we're done here. Let's declare success.
+  
   
   console.log("All API integration tests passed!");
   process.exit(0);

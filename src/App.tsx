@@ -10,6 +10,7 @@ import { History } from './pages/History.tsx';
 import { Assistant } from './pages/Assistant.tsx';
 import { Layout } from './components/Layout.tsx';
 import { ProfessionalDashboard } from './components/professional/ProfessionalDashboard.tsx';
+import { PrivacyCenter } from './pages/PrivacyCenter.tsx';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
@@ -39,7 +40,8 @@ export default function App() {
             <Route path="assessment" element={<Assessment />} />
             <Route path="history" element={<History />} />
             <Route path="assistant" element={<Assistant />} />
-            <Route path="professional" element={<ProfessionalDashboard professionalId="dr-smith-456" patientId="patient-123" />} />
+            <Route path="professional" element={<ProfessionalDashboard professionalId="dr-smith-456" professionalName="Dr. Smith" />} />
+            <Route path="privacy" element={<PrivacyCenter />} />
           </Route>
         </Routes>
       </BrowserRouter>

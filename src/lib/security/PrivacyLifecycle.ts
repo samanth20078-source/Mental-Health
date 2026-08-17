@@ -1,4 +1,4 @@
-import { PermissionType } from '../professional/types.ts';
+import { DataType } from '../professional/types.ts';
 
 export type LifecycleStage = 
   | 'COLLECTION'
@@ -13,7 +13,7 @@ export interface DataPolicy {
   purpose: string;
   retentionPeriodDays: number;
   thirdPartySharing: boolean;
-  requiredConsent: PermissionType;
+  requiredConsent: DataType;
 }
 
 /**

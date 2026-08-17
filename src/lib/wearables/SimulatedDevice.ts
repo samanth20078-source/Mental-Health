@@ -19,6 +19,10 @@ export class SimulatedDevice implements WearableDevice {
   private deviceBootTimeMs = Date.now() - 1000000; 
 
   constructor(id: string = 'sim-device-001', name: string = 'Simulated Wellness Band') {
+    // SECURITY HARDENING: Prevent simulated device in production
+    if (import.meta.env && import.meta.env.PROD) {
+      throw new Error("CRITICAL_SECURITY_ERROR: Simulated Wearable Device cannot be instantiated in a production environment. This prevents fake physiological data from entering clinical pipelines.");
+    }
     this.identity = {
       id,
       name,
@@ -70,7 +74,7 @@ export class SimulatedDevice implements WearableDevice {
     const intervalMs = 1000 / meta.rate;
 
     const interval = setInterval(() => {
-      // Simulate missing packet occasionally (1% chance)
+      // SIMULATED: missing packet occasionally (1% chance)
       const skipPacket = Math.random() < 0.01;
       let seq = this.sequenceNumbers.get(sensor) || 0;
       
@@ -79,6 +83,8 @@ export class SimulatedDevice implements WearableDevice {
           deviceId: this.identity.id,
           timestamp: Date.now() - this.deviceBootTimeMs, // Raw device time
           sensorType: sensor,
+          samplingRate: meta.rate,
+          isSimulated: true,
           values: this.generateMockValue(sensor),
           signalQuality: Math.random() > 0.1 ? 'GOOD' : 'FAIR',
           sequenceNumber: seq
@@ -107,7 +113,8 @@ export class SimulatedDevice implements WearableDevice {
   }
 
   private generateMockValue(sensor: SensorType): number[] {
-    // Generate basic noise or sine waves. NOT actual medical algorithms.
+    // SIMULATED: Generate basic noise or sine waves. NOT actual medical algorithms.
+    // Do NOT claim that simulated physiological measurements are real measurements.
     const t = Date.now() / 1000;
     switch(sensor) {
       case 'PPG': return [Math.sin(t * Math.PI * 2) * 100 + 500]; // Simulated AC/DC

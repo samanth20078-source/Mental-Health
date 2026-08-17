@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { evidenceStore, EvidenceSource } from '../lib/evidenceStore.ts';
+import { evidenceStore, EvidenceSource, EvidenceStore } from '../lib/evidenceStore.ts';
 import 'dotenv/config'; 
 
 async function runTests() {
@@ -28,53 +28,84 @@ async function runTests() {
 
   const content1 = "Depression is a common mental disorder. Globally, an estimated 5% of adults suffer from depression. It is characterized by persistent sadness and a lack of interest or pleasure in previously rewarding or enjoyable activities. Effective treatments are available for mild, moderate, and severe depression.";
 
+  // Initialize store cache
+  await evidenceStore.init();
+
   // 1. Ingestion and Duplicate Sources
-  await evidenceStore.ingest(source1, content1);
-  console.log("✓ Ingested source 1");
+  // Clean up if existed from previous run, normally tests use clean DB.
+  // Assuming clean DB or at least we catch the duplicate correctly.
+  try {
+    await evidenceStore.ingest(source1, content1);
+    console.log("✓ Ingested source 1");
+  } catch (e: any) {
+    if (e.message.includes("already exists")) {
+       console.log("✓ Caught duplicate source error (Source already existed from prior run)");
+    } else {
+       throw e;
+    }
+  }
 
   try {
     await evidenceStore.ingest(source1, content1);
     assert.fail("Should have thrown duplicate source error");
   } catch (e: any) {
     assert.ok(e.message.includes("already exists"));
-    console.log("✓ Caught duplicate source error");
+    console.log("✓ Caught duplicate source error (Immutable versions)");
   }
 
-  // 2. Version Updates
+  // 2. Version Updates (New Version)
   const source1v2 = { ...source1, version: "2.0" };
   const content1v2 = "Depression is a common mental disorder. Globally, an estimated 5% of adults suffer from depression. New treatments include advanced CBT protocols.";
-  await evidenceStore.ingest(source1v2, content1v2);
-  const sources = evidenceStore.getSources();
-  assert.equal(sources.find(s => s.id === source1.id)?.version, "2.0");
-  console.log("✓ Handled version updates correctly");
+  
+  try {
+    await evidenceStore.ingest(source1v2, content1v2);
+  } catch(e: any) {
+    if (!e.message.includes("already exists")) throw e;
+  }
 
-  // 3. Retrieval and Source Attribution
+  const sources = await evidenceStore.getSources();
+  assert.ok(sources.find(s => s.id === source1.id && s.version === "2.0"));
+  console.log("✓ Handled version updates correctly via explicit new versions");
+
+  // 3. Retrieval, Relevance Thresholds, and Source Attribution
   const results = await evidenceStore.retrieve("What is depression and how many people have it?");
   assert.ok(results.length > 0);
   assert.equal(results[0].source.id, source1.id);
-  assert.ok(results[0].score > 0.45);
-  console.log("✓ Retrieved relevant evidence with correct source attribution");
+  assert.ok(results[0].score >= 0.70); // Must meet high relevance threshold
+  assert.ok(results[0].chunk.retrievalTimestamp); // Provenance tracked
+  console.log("✓ Retrieved relevant evidence with correct source attribution and provenance");
 
   // 4. Missing Sources (Querying something unrelated)
   const missingResults = await evidenceStore.retrieve("What are the symptoms of a broken leg?");
-  if (missingResults.length > 0) {
-    console.log("Missing result score:", missingResults[0].score);
-  }
-  assert.ok(missingResults.length === 0 || missingResults[0].score < 0.60); // Should score low
-  console.log("✓ Handled missing sources (irrelevant query)");
-  
+  // Due to high relevance threshold, irrelevant queries should return exactly 0 results
+  assert.ok(missingResults.length === 0); 
+  console.log("✓ Handled missing sources and enforced strict relevance threshold");
+
   // 5. Fail safely (mocking API failure by temporarily substituting the AI client)
-  // We can test safe failure directly by calling a broken store
-  const { EvidenceStore } = await import('../lib/evidenceStore.ts');
   const brokenStore = new EvidenceStore("bad-api-key");
   const safeResults = await brokenStore.retrieve("Depression");
   assert.deepEqual(safeResults, []);
   console.log("✓ Failed safely when API is unavailable");
+
+  // 6. Source Integrity & Corruption checks
+  const corruptSource = { ...source1, id: "test-corrupt-1", version: "1.0" };
+  try {
+    await evidenceStore.ingest(corruptSource, content1, "WRONG-HASH");
+    assert.fail("Should have failed hash validation");
+  } catch (e: any) {
+    assert.ok(e.message.includes("hash mismatch"));
+    console.log("✓ Enforced content integrity validation");
+  }
   
-  // 6. Unsupported claims test (verify AI doesn't hallucinate facts)
-  // For the sake of the test script, we acknowledge this is tested manually in chat
-  // But we can verify our system prompt formatting.
-  console.log("✓ Verified AI prompt constraints against unsupported claims");
+  // 7. Authorization of Source Authors
+  const unauthorizedSource = { ...source1, id: "bad-author-1", version: "1.0", author: "Random Blog", isAuthoritative: true };
+  try {
+    await evidenceStore.ingest(unauthorizedSource, content1);
+    assert.fail("Should have failed unauthorized author");
+  } catch (e: any) {
+    assert.ok(e.message.includes("Unauthorized source author"));
+    console.log("✓ Prevented unauthorized source from claiming authority");
+  }
 
   console.log("All evidence architecture tests passed!");
 }

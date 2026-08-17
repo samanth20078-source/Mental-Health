@@ -1,6 +1,6 @@
 import { 
-  PermissionType, 
-  ConsentGrant, 
+  DataType, 
+  ConsentRecord, 
   PatientDataBundle,
   SelfReportedData,
   SensorInsightData,
@@ -11,21 +11,20 @@ import {
 import { auditLogger } from './AuditLogger.ts';
 
 /**
- * Mock data store for architectural demonstration.
- * In a real application, this routes to secure database queries.
+ * SIMULATED: Mock data store for architectural demonstration.
  */
 export class MockDataStore {
   public getSelfReported(patientId: string): SelfReportedData[] {
     return [{ id: 'sr-1', timestamp: Date.now() - 86400000, type: 'SELF_REPORTED', content: 'Felt a bit tired today.', moodScale: 3 }];
   }
   public getSensorInsights(patientId: string): SensorInsightData[] {
-    return [{ id: 'si-1', timestamp: Date.now() - 40000, type: 'SENSOR_INSIGHTS', featureName: 'HEART_RATE', insightText: 'Your recent heart rate pattern significantly differs from your usual baseline.', deviationZScore: 2.1 }];
+    return [{ id: 'si-1', timestamp: Date.now() - 40000, type: 'SENSOR_INSIGHTS', featureName: 'HEART_RATE', insightText: 'Your recent heart rate observations are significantly different from your personal baseline.', deviationZScore: 2.1 }];
   }
   public getRawSensorData(patientId: string): RawSensorData[] {
     return [{ id: 'rs-1', timestamp: Date.now(), type: 'RAW_SENSOR_DATA', sensorType: 'PPG', value: 520 }];
   }
   public getAISummaries(patientId: string): AISummaryData[] {
-    return [{ id: 'ai-1', timestamp: Date.now() - 100000, type: 'AI_SUMMARIES', summaryText: 'Patient noted general fatigue. Wearable insights align with possible poor sleep quality.', generationVersion: '1.0' }];
+    return [{ id: 'ai-1', timestamp: Date.now() - 100000, type: 'AI_SUMMARIES', summaryText: 'Patient noted general fatigue.', generationVersion: '1.0' }];
   }
   public getSafetyEvents(patientId: string): SafetyEventData[] {
     return [{ id: 'se-1', timestamp: Date.now() - 500000, type: 'SAFETY_EVENTS', severity: 'HIGH', intervention: 'block_ai' }];
@@ -33,64 +32,110 @@ export class MockDataStore {
 }
 
 export class AccessManager {
-  private consents: Map<string, ConsentGrant> = new Map();
+  private consents: Map<string, ConsentRecord> = new Map();
   private dataStore = new MockDataStore();
 
-  public grantConsent(patientId: string, professionalId: string, permissions: PermissionType[]): string {
-    const grantId = crypto.randomUUID();
-    const grant: ConsentGrant = {
-      id: grantId,
+  public requestAccess(patientId: string, professionalId: string, professionalName: string, requestedTypes: DataType[], reason: string, expiresInDays: number = 30): string {
+    const id = crypto.randomUUID();
+    const record: ConsentRecord = {
+      id,
       patientId,
       professionalId,
-      permissions: new Set(permissions),
-      status: 'ACTIVE',
-      grantedAt: Date.now()
+      professionalName,
+      requestedDataTypes: requestedTypes,
+      grantedDataTypes: [],
+      reason,
+      status: 'PENDING',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      expiresAt: Date.now() + expiresInDays * 24 * 60 * 60 * 1000,
+      version: '1.0'
     };
-    
-    // Composite key for unique active mapping
-    this.consents.set(`${patientId}:${professionalId}`, grant);
-    return grantId;
+    this.consents.set(id, record);
+    return id;
   }
 
-  public revokeConsent(patientId: string, professionalId: string): void {
-    const key = `${patientId}:${professionalId}`;
-    const grant = this.consents.get(key);
-    if (grant && grant.status === 'ACTIVE') {
-      grant.status = 'REVOKED';
-      grant.revokedAt = Date.now();
-      this.consents.set(key, grant);
+  public getConsent(consentId: string): ConsentRecord | undefined {
+    return this.consents.get(consentId);
+  }
+
+  public getPatientConsents(patientId: string): ConsentRecord[] {
+    return Array.from(this.consents.values()).filter(c => c.patientId === patientId);
+  }
+
+  public respondToRequest(consentId: string, patientId: string, status: 'GRANTED' | 'DENIED', grantedTypes: DataType[] = []): void {
+    const record = this.consents.get(consentId);
+    if (!record) throw new Error("Consent record not found");
+    if (record.patientId !== patientId) throw new Error("Unauthorized patient substitution");
+    if (record.status !== 'PENDING') throw new Error("Consent already processed");
+    
+    record.status = status;
+    record.grantedDataTypes = status === 'GRANTED' ? grantedTypes : [];
+    record.updatedAt = Date.now();
+    this.consents.set(consentId, record);
+  }
+
+
+  public deleteAllForPatient(patientId: string): void {
+    const toDelete = Array.from(this.consents.values())
+      .filter(c => c.patientId === patientId)
+      .map(c => c.id);
+    for (const id of toDelete) {
+      this.consents.delete(id);
     }
   }
 
-  public hasPermission(patientId: string, professionalId: string, permission: PermissionType): boolean {
-    const grant = this.consents.get(`${patientId}:${professionalId}`);
-    if (!grant || grant.status !== 'ACTIVE') return false;
-    return grant.permissions.has(permission);
+  public revokeConsent(consentId: string, patientId: string): void {
+    const record = this.consents.get(consentId);
+    if (!record) throw new Error("Consent record not found");
+    if (record.patientId !== patientId) throw new Error("Unauthorized patient substitution");
+    
+    record.status = 'REVOKED';
+    record.revokedAt = Date.now();
+    record.updatedAt = Date.now();
+    this.consents.set(consentId, record);
   }
 
-  /**
-   * Fetches data for a professional, strictly adhering to granted permissions.
-   * Silently drops requested types that are not authorized and logs the access attempt.
-   */
+  public checkActiveConsent(patientId: string, professionalId: string): ConsentRecord | null {
+    // Auto-expire
+    Array.from(this.consents.values()).forEach(c => {
+      if (c.status === 'GRANTED' && c.expiresAt <= Date.now()) {
+        c.status = 'EXPIRED';
+        c.updatedAt = Date.now();
+      }
+    });
+
+    // Return latest active
+    const activeConsents = Array.from(this.consents.values()).filter(c => 
+      c.patientId === patientId && 
+      c.professionalId === professionalId && 
+      c.status === 'GRANTED' && 
+      c.expiresAt > Date.now()
+    );
+
+    if (activeConsents.length === 0) return null;
+    return activeConsents.sort((a,b) => b.createdAt - a.createdAt)[0];
+  }
+
   public accessPatientData(
     professionalId: string, 
     patientId: string, 
-    requestedTypes: PermissionType[]
+    requestedTypes: DataType[]
   ): PatientDataBundle {
-    const grant = this.consents.get(`${patientId}:${professionalId}`);
+    const record = this.checkActiveConsent(patientId, professionalId);
     
-    if (!grant || grant.status !== 'ACTIVE') {
-      auditLogger.logAccess(professionalId, patientId, requestedTypes, false, 'No active consent found.');
+    if (!record) {
+      auditLogger.logAccess(professionalId, patientId, requestedTypes, [], false, 'No active, unexpired consent found.');
       throw new Error("Unauthorized: No active consent exists for this patient.");
     }
 
     const bundle: PatientDataBundle = { patientId };
-    const accessedTypes: PermissionType[] = [];
-    const deniedTypes: PermissionType[] = [];
+    const accessedTypes: DataType[] = [];
+    const deniedTypes: DataType[] = [];
 
     // Strictly filter requested types against granted permissions
     for (const type of requestedTypes) {
-      if (grant.permissions.has(type)) {
+      if (record.grantedDataTypes.includes(type)) {
         accessedTypes.push(type);
       } else {
         deniedTypes.push(type);
@@ -106,9 +151,9 @@ export class AccessManager {
 
     // Audit the result
     if (deniedTypes.length > 0) {
-      auditLogger.logAccess(professionalId, patientId, requestedTypes, false, `Partial denial. Missing permissions for: ${deniedTypes.join(', ')}`);
+      auditLogger.logAccess(professionalId, patientId, requestedTypes, accessedTypes, false, `Partial denial. Missing permissions for: ${deniedTypes.join(', ')}`);
     } else {
-      auditLogger.logAccess(professionalId, patientId, accessedTypes, true);
+      auditLogger.logAccess(professionalId, patientId, requestedTypes, accessedTypes, true);
     }
 
     return bundle;

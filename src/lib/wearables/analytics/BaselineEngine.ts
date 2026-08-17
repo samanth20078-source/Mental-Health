@@ -4,37 +4,43 @@ import { Baseline } from './types.ts';
 export class BaselineEngine {
   /**
    * Calculates a baseline (mean, standard deviation) for a specific feature
-   * over a given historical window. Automatically excludes UNRELIABLE data.
+   * over a given historical window. Automatically excludes invalid data.
    */
   public calculateBaseline(
     features: ProcessedFeature[],
     featureName: string,
     windowStart: number,
-    windowEnd: number
+    windowEnd: number,
+    allowSimulated: boolean = false
   ): Baseline | null {
     const validFeatures = features.filter(
       (f) =>
         f.featureName === featureName &&
-        f.quality === 'GOOD' &&
+        f.validityStatus === 'VALID' &&
+        f.value !== null &&
         f.timestamp >= windowStart &&
-        f.timestamp <= windowEnd
+        f.timestamp <= windowEnd &&
+        (allowSimulated || !f.metadata.isSimulated)
     );
 
-    if (validFeatures.length < 2) {
-      // Not enough data to establish a meaningful baseline and standard deviation
+    // Minimum data threshold
+    if (validFeatures.length < 10) {
       return null;
     }
 
     const count = validFeatures.length;
-    const values = validFeatures.map((f) => f.value);
+    const values = validFeatures.map((f) => f.value as number);
 
     // Calculate mean
     const mean = values.reduce((sum, val) => sum + val, 0) / count;
 
     // Calculate standard deviation (sample standard deviation)
-    const squaredDifferences = values.map((val) => Math.pow(val - mean, 2));
-    const variance = squaredDifferences.reduce((sum, val) => sum + val, 0) / (count - 1);
-    const stdDev = Math.sqrt(variance);
+    let stdDev = 0;
+    if (count > 1) {
+      const squaredDifferences = values.map((val) => Math.pow(val - mean, 2));
+      const variance = squaredDifferences.reduce((sum, val) => sum + val, 0) / (count - 1);
+      stdDev = Math.sqrt(variance);
+    }
 
     return {
       featureName,
@@ -52,19 +58,23 @@ export class BaselineEngine {
    */
   public calculateRecentDeviation(
     recentFeatures: ProcessedFeature[],
-    baseline: Baseline
+    baseline: Baseline,
+    allowSimulated: boolean = false
   ): { recentMean: number; zScore: number; validCount: number } | null {
     const validRecent = recentFeatures.filter(
-      (f) => f.featureName === baseline.featureName && f.quality === 'GOOD'
+      (f) => 
+        f.featureName === baseline.featureName && 
+        f.validityStatus === 'VALID' &&
+        f.value !== null &&
+        (allowSimulated || !f.metadata.isSimulated)
     );
 
-    if (validRecent.length === 0) return null;
+    // Require at least 3 points for a recent deviation assessment
+    if (validRecent.length < 3) return null; 
 
-    const recentMean = validRecent.reduce((sum, f) => sum + f.value, 0) / validRecent.length;
+    const recentMean = validRecent.reduce((sum, f) => sum + (f.value as number), 0) / validRecent.length;
     
     // Z-Score: (Value - Mean) / StdDev
-    // If StdDev is 0 (all historical values are exactly identical), we can't mathematically calculate Z-Score.
-    // In biology this is highly unlikely, but we protect against division by zero.
     const safeStdDev = baseline.stdDev > 0 ? baseline.stdDev : 0.0001; 
     const zScore = (recentMean - baseline.mean) / safeStdDev;
 

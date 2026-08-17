@@ -19,6 +19,8 @@ export interface SensorDataPacket {
   timestamp: number; // Raw device timestamp (often milliseconds since boot or epoch)
   synchronizedTimestamp?: number; // Application/Backend synchronized epoch timestamp
   sensorType: SensorType;
+  samplingRate?: number; // Added to prevent assumptions
+  isSimulated?: boolean;
   values: number[]; // Raw sensor values
   signalQuality: SignalQuality;
   sequenceNumber: number; // Incrementing ID to detect missing packets

@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.tsx';
-import { LayoutDashboard, BookHeart, LineChart, Settings, Bot, Users } from 'lucide-react';
+import { LayoutDashboard, BookHeart, LineChart, Settings, Bot, Users, ShieldAlert } from 'lucide-react';
 
 export const Layout = () => {
   return (
@@ -20,6 +20,7 @@ export const Layout = () => {
           <NavItem to="/assistant" icon={<Bot size={20} />} label="AI Assistant" />
           <NavItem to="/professional" icon={<Users size={20} />} label="Professional" />
           <NavItem to="/settings" icon={<Settings size={20} />} label="Settings" />
+          <NavItem to="/privacy" icon={<ShieldAlert size={20} />} label="Privacy Center" />
         </nav>
       </aside>
 

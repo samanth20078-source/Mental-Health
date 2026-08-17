@@ -12,12 +12,17 @@ const app = express();
 const PORT = 3000;
 
 // Security Middleware
+// Frameguard is explicitly disabled to allow embedding within the AI Studio preview environment (iframe).
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
   crossOriginEmbedderPolicy: false,
   frameguard: false,
 }));
-app.use(cors());
+
+// Restrict CORS to specific origins in production, fallback to wildcard for development/preview.
+const allowedOrigins = process.env.ALLOWED_ORIGIN ? [process.env.ALLOWED_ORIGIN] : '*';
+app.use(cors({ origin: allowedOrigins }));
+
 app.use(express.json({ limit: '1mb' }));
 
 // Global Rate Limiter
@@ -28,11 +33,36 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
+
+// Production Readiness Validation
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("CRITICAL: GEMINI_API_KEY is required in production.");
+    process.exit(1);
+  }
+  if (!process.env.ALLOWED_ORIGIN) {
+    console.warn("WARNING: ALLOWED_ORIGIN not set in production. CORS is dangerously open or improperly configured.");
+  }
+}
+
+// Health Endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', timestamp: Date.now(), env: process.env.NODE_ENV || 'development' });
+});
+
 // Specific Rate Limiter for AI endpoint
+
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
   message: { error: 'Too many AI requests, please try again later.' }
+});
+
+// Specific Rate Limiter for sensitive operations (deletion, export)
+const sensitiveOpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  message: { error: 'Too many sensitive operations requested, please try again later.' }
 });
 
 // Initialize Gemini Client
@@ -89,14 +119,15 @@ app.post('/api/chat', requireAuth, aiLimiter, async (req: AuthRequest, res) => {
     // Deterministic safety evaluation
     const safetyDecision = safetyEngine.processInput(message);
     
-    if (!safetyDecision.isSafe) {
+    if (!safetyDecision.isSafe || safetyDecision.actions.includes("BLOCK_GENERATIVE_RESPONSE")) {
       // NOTE: Sanitized log, avoids logging full user message content for privacy
       console.warn(`Safety intervention triggered: [Rule: ${safetyDecision.ruleId}, State: ${safetyDecision.state}]`);
-      if (safetyDecision.actions.includes('block_ai')) {
+      if (safetyDecision.actions.includes('BLOCK_GENERATIVE_RESPONSE')) {
         return res.json({ 
           text: "I am an AI and I'm really concerned about what you just shared. Please know you are not alone. If you are in immediate danger or experiencing a crisis, please reach out to a local emergency service or a crisis hotline immediately.",
           safetyIntervention: true,
-          safetyState: safetyDecision.state
+          safetyState: safetyDecision.state,
+          safetyActions: safetyDecision.actions
         });
       }
     }
@@ -154,7 +185,7 @@ app.post('/api/chat', requireAuth, aiLimiter, async (req: AuthRequest, res) => {
     });
 
     const replyText = response.text || "I'm sorry, I couldn't process that response.";
-    res.json({ text: replyText });
+    res.json({ text: replyText, safetyState: safetyDecision.state, safetyActions: safetyDecision.actions });
   } catch (error) {
     console.error('AI Chat Error: Internal Server Error'); // Sanitized log
     res.status(500).json({ error: 'An error occurred while communicating with the AI service.' });
@@ -162,18 +193,25 @@ app.post('/api/chat', requireAuth, aiLimiter, async (req: AuthRequest, res) => {
 });
 
 // Privacy Endpoint: Delete User Data
-app.delete('/api/user/data', requireAuth, aiLimiter, async (req: AuthRequest, res) => {
+app.delete('/api/user/data', requireAuth, sensitiveOpLimiter, async (req: AuthRequest, res) => {
   try {
     const userId = req.user?.uid;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
-    // Simulating full secure deletion of backend records
-    // e.g., deleting from Firestore, revoking access in AccessManager, clearing logs
     console.info(`[DATA LIFECYCLE] User ${userId} requested full data deletion.`);
     
-    res.json({ status: 'ok', message: 'All personal data has been securely deleted.' });
+    const { executeUserDeletion } = await import('./src/lib/privacy/dataLifecycle.ts');
+    const { accessManager } = await import('./src/lib/professional/AccessManager.ts');
+    
+    // 1. Delete in-memory mock consents if present
+    accessManager.deleteAllForPatient(userId);
+    
+    // 2. Execute real deletion lifecycle
+    const deletedCollections = await executeUserDeletion(userId);
+    
+    res.json({ status: 'ok', message: 'All personal data has been securely deleted.', deletedCollections });
   } catch (error) {
     console.error('Data Deletion Error');
     res.status(500).json({ error: 'Failed to delete user data.' });

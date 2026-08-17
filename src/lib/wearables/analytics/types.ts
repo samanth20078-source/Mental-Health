@@ -20,9 +20,13 @@ export interface WellnessInsight {
   featureName: string;
   insightText: string;
   alternativeExplanations: string[];
+  limitations: string[];
   confidence: InsightConfidence;
   deviationZScore: number;
   timestamp: number;
   baseline: Baseline;
   recentMean: number;
+  observationWindowStart: number;
+  observationWindowEnd: number;
+  algorithmVersion: string;
 }

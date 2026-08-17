@@ -16,6 +16,7 @@ export const Assistant = () => {
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<'general' | 'fast' | 'search' | 'maps' | 'deep'>('general');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionSafetyState, setSessionSafetyState] = useState<'NORMAL' | 'ELEVATED' | 'HIGH' | 'CRITICAL' | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -58,6 +59,15 @@ export const Assistant = () => {
         throw new Error(data.error || 'Failed to send message');
       }
 
+      if (data.safetyState) {
+        setSessionSafetyState(prev => {
+          const levels = { 'NORMAL': 0, 'ELEVATED': 1, 'HIGH': 2, 'CRITICAL': 3 };
+          const prevLevel = prev ? levels[prev] : -1;
+          const newLevel = levels[data.safetyState as keyof typeof levels] ?? -1;
+          return newLevel > prevLevel ? data.safetyState : prev;
+        });
+      }
+
       setMessages(prev => [...prev, { role: 'model', text: data.text }]);
     } catch (error) {
       console.error('Chat error:', error);
@@ -71,10 +81,26 @@ export const Assistant = () => {
   return (
     <div className="flex flex-col h-[100dvh] md:h-screen bg-slate-50">
       <div className="bg-white border-b border-slate-200 p-4 md:p-6 shadow-sm z-10 flex-shrink-0">
-        <h1 className="text-xl md:text-2xl font-semibold text-slate-800 flex items-center gap-2">
-          <Bot className="text-blue-600" />
-          Wellness Assistant
-        </h1>
+        <div className="flex justify-between items-start">
+          <h1 className="text-xl md:text-2xl font-semibold text-slate-800 flex items-center gap-2">
+            <Bot className="text-blue-600" />
+            Wellness Assistant
+          </h1>
+          {sessionSafetyState && (
+            <div className="flex flex-col items-end opacity-20 hover:opacity-100 transition-opacity cursor-default" title="Diagnostic Safety Level (Professional Use Only)">
+              <div className="flex items-center gap-1.5">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  sessionSafetyState === 'NORMAL' && "bg-slate-300",
+                  sessionSafetyState === 'ELEVATED' && "bg-amber-400",
+                  sessionSafetyState === 'HIGH' && "bg-orange-500",
+                  sessionSafetyState === 'CRITICAL' && "bg-red-600"
+                )} />
+                <span className="text-[9px] text-slate-400 font-mono tracking-wider">{sessionSafetyState}</span>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="mt-2 flex items-start gap-2 text-xs md:text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100">
           <AlertCircle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <p>

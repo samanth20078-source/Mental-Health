@@ -39,6 +39,7 @@ export abstract class BasePipeline implements ProcessingPipeline<SensorDataPacke
         originalSensor: packet.sensorType,
         samplingRate: 0, // Should be passed if known, 0 is placeholder
         rawSignalQuality: packet.signalQuality,
+        isSimulated: packet.isSimulated,
         ...extraMetadata
       }
     };

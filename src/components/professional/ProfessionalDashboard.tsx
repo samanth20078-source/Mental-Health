@@ -1,72 +1,142 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  PermissionType, 
+  DataType, 
   PatientDataBundle, 
+  ConsentRecord
 } from '../../lib/professional/types';
 import { accessManager } from '../../lib/professional/AccessManager';
 
 interface Props {
   professionalId: string;
-  patientId: string;
+  professionalName: string;
 }
 
-export const ProfessionalDashboard: React.FC<Props> = ({ professionalId, patientId }) => {
+export const ProfessionalDashboard: React.FC<Props> = ({ professionalId, professionalName }) => {
+  if (import.meta.env && import.meta.env.PROD && professionalId === 'dr-smith-456') {
+    return <div className="p-8 text-red-600 bg-red-50 border border-red-200 rounded-lg m-4">CRITICAL SECURITY ERROR: Demo professional identities cannot be used in a production environment.</div>;
+  }
+  const [patientIdInput, setPatientIdInput] = useState('');
+  const [activePatientId, setActivePatientId] = useState<string | null>(null);
   const [data, setData] = useState<PatientDataBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [requestMode, setRequestMode] = useState(false);
+  const [requestReason, setRequestReason] = useState('');
+  const [requestedTypes, setRequestedTypes] = useState<DataType[]>([]);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Automatically grant consent for demo purposes so data can be fetched
-    accessManager.grantConsent(patientId, professionalId, [
-      'SELF_REPORTED', 
-      'SENSOR_INSIGHTS', 
-      'RAW_SENSOR_DATA', 
-      'SAFETY_EVENTS', 
-      'AI_SUMMARIES'
-    ]);
-  }, [professionalId, patientId]);
+  const availableTypes: DataType[] = ['SELF_REPORTED', 'SENSOR_INSIGHTS', 'RAW_SENSOR_DATA', 'SAFETY_EVENTS', 'AI_SUMMARIES'];
 
-  const handleFetchData = () => {
+  const handleFetchData = (pid: string) => {
     try {
       setError(null);
-      // Simulating a professional selecting which data they want to view
-      const requestedTypes: PermissionType[] = [
-        'SELF_REPORTED', 
-        'SENSOR_INSIGHTS', 
-        'RAW_SENSOR_DATA', 
-        'SAFETY_EVENTS', 
-        'AI_SUMMARIES'
-      ];
       
-      const bundle = accessManager.accessPatientData(professionalId, patientId, requestedTypes);
+      const consent = accessManager.checkActiveConsent(pid, professionalId);
+      if (!consent) {
+        throw new Error("No active consent found. Please request access.");
+      }
+
+      const bundle = accessManager.accessPatientData(professionalId, pid, consent.grantedDataTypes);
       setData(bundle);
+      setActivePatientId(pid);
     } catch (err: any) {
       setError(err.message);
       setData(null);
+      setActivePatientId(null);
     }
+  };
+
+  const handleRequestAccess = () => {
+    if (!patientIdInput) return setError("Patient ID is required");
+    if (requestedTypes.length === 0) return setError("Select at least one data type");
+    if (!requestReason) return setError("Reason is required");
+
+    try {
+      accessManager.requestAccess(patientIdInput, professionalId, professionalName, requestedTypes, requestReason);
+      setSuccessMsg(`Access request sent to patient ${patientIdInput}`);
+      setRequestMode(false);
+      setRequestReason('');
+      setRequestedTypes([]);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const toggleType = (type: DataType) => {
+    setRequestedTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
   };
 
   return (
     <div className="max-w-4xl mx-auto p-6 bg-slate-50 min-h-screen">
       <header className="mb-8">
         <h1 className="text-3xl font-light text-slate-800">Professional Dashboard</h1>
-        <p className="text-slate-500 mt-2">Viewing Patient: {patientId}</p>
-        
-        <button 
-          onClick={handleFetchData}
-          className="mt-4 px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
-        >
-          Access Patient Data
-        </button>
+        <p className="text-slate-500 mt-2">Welcome, {professionalName} ({professionalId})</p>
       </header>
+
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+        <h2 className="text-xl font-medium mb-4">Access Patient Record</h2>
+        <div className="flex gap-4 mb-4">
+          <input 
+            type="text" 
+            placeholder="Enter Patient ID" 
+            value={patientIdInput}
+            onChange={(e) => setPatientIdInput(e.target.value)}
+            className="border p-2 rounded flex-grow"
+          />
+          <button 
+            onClick={() => handleFetchData(patientIdInput)}
+            className="px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700"
+          >
+            Access Data
+          </button>
+          <button 
+            onClick={() => setRequestMode(!requestMode)}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+          >
+            Request Access
+          </button>
+        </div>
+
+        {requestMode && (
+          <div className="bg-blue-50 p-4 rounded mt-4">
+            <h3 className="font-medium mb-2">New Access Request</h3>
+            <textarea 
+              placeholder="Reason for requesting access (e.g., Routine monitoring)"
+              value={requestReason}
+              onChange={e => setRequestReason(e.target.value)}
+              className="w-full border p-2 rounded mb-4"
+            />
+            <p className="font-medium mb-2">Requested Data Types:</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {availableTypes.map(type => (
+                <label key={type} className="flex items-center gap-2 bg-white px-3 py-1 border rounded">
+                  <input type="checkbox" checked={requestedTypes.includes(type)} onChange={() => toggleType(type)} />
+                  {type}
+                </label>
+              ))}
+            </div>
+            <button onClick={handleRequestAccess} className="px-4 py-2 bg-blue-600 text-white rounded">
+              Submit Request
+            </button>
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-md mb-6">
-          <strong>Access Error:</strong> {error}
+          <strong>Error:</strong> {error}
         </div>
       )}
 
-      {data && (
+      {successMsg && (
+        <div className="bg-green-50 border border-green-200 text-green-800 p-4 rounded-md mb-6">
+          {successMsg}
+        </div>
+      )}
+
+      {data && activePatientId && (
         <div className="space-y-6">
+          <h2 className="text-2xl font-light text-slate-800">Viewing Record: {activePatientId}</h2>
           
           {/* Section 1: Self-Reported */}
           <section className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
@@ -181,7 +251,6 @@ export const ProfessionalDashboard: React.FC<Props> = ({ professionalId, patient
               <p className="text-slate-400 italic">No access to raw physiological data.</p>
             )}
           </section>
-
         </div>
       )}
     </div>
